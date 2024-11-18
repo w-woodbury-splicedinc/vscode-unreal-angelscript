@@ -251,7 +251,7 @@ export function Complete(asmodule: scriptfiles.ASModule, position: Position): Ar
         AddMathShortcutCompletions(context, completions);
 
         // All all namespace contents if enabled
-        AddAllNamespacesForCompletion(context, completions);
+        AddAllNamespacesForCompletion(context, completions, searchTypes);
     }
 
     // Search for completions in all global and real types we are looking in
@@ -4445,6 +4445,8 @@ export function AddAllCompletionsFromNamespace(namespace : typedb.DBNamespace, c
 
     let propertyIndex = 0;
 
+    // We can't just use AddCompletitionsFromType: we need the fully qualified names here as we are looking in all namespaces, not just the
+    // current one
     namespace.forEachSymbol(function (symbol : typedb.DBSymbol)
     {
         if (symbol instanceof typedb.DBMethod)
@@ -4693,23 +4695,33 @@ export function AddAllCompletionsFromNamespace(namespace : typedb.DBNamespace, c
     }
 }
 
-export function AddAllNamespacesForCompletion(context: CompletionContext, completions: Array<CompletionItem>)
+export function AddAllNamespacesForCompletion(context: CompletionContext, completions: Array<CompletionItem>, ignore: Array<typedb.DBType | typedb.DBNamespace>)
 {
     if (!CompletionSettings.allNamespaceCompletions)
         return;
 
     const namespaces = Array.from(typedb.GetAllNamespaces()).map(([name, namespace]) => ({ name, namespace }));
 
+    let processedNamespaces = new Set<string>();
+
+    // Seed processedNamespaces with our ignore list
+    ignore.forEach(element => {
+        if(element instanceof typedb.DBNamespace) {
+            processedNamespaces.add(element.qualifiedNamespace);
+        }
+    });
+
     while (namespaces.length > 0) {
         const { name, namespace } = namespaces.pop();
-        if (namespace) {
+        if (namespace && !processedNamespaces.has(namespace.qualifiedNamespace)) {
+            processedNamespaces.add(namespace.qualifiedNamespace);
+
             // Keep track of the fully qualified path of the current namespace
             if (namespace.childNamespaces) {
                 for (const [childName, childNamespace] of namespace.childNamespaces) {
-                    namespaces.push({ name: name + "::" + childName, namespace: childNamespace });
+                    namespaces.push({ name: childNamespace.qualifiedNamespace, namespace: childNamespace });
                 }
             }
-
             AddAllCompletionsFromNamespace(namespace, context, completions);
         }
     }
